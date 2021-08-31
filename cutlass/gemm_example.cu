@@ -3,9 +3,7 @@
 
 #include <cutlass/util/host_tensor.h>
 
-#include <benchmark/benchmark.h>
-
-static void CUTLASS_GEMM(benchmark::State& state) {
+int main() {
 
   // Define the GEMM operation
   using Gemm = cutlass::gemm::device::Gemm<
@@ -26,12 +24,12 @@ static void CUTLASS_GEMM(benchmark::State& state) {
   //
   // Define the problem size
   //
-  int M = state.range(0);
-  int N = state.range(1);
-  int K = state.range(2);
+  int M = 512;
+  int N = 256;
+  int K = 128;
 
-  float alpha = 1;
-  float beta = 0;
+  float alpha = 1.25f;
+  float beta = -1.25f;
 
   //
   // Allocate device memory
@@ -54,14 +52,6 @@ static void CUTLASS_GEMM(benchmark::State& state) {
   // Launch GEMM on the device
   //
 
-float runtime_ms = 0;
-cudaEvent_t startEvent, endEvent;
-cudaEventCreate(&startEvent);
-cudaEventCreate(&endEvent);
-
-  for (auto _ : state) {
-      cudaEventRecord(startEvent);
-
   status = gemm_op({
     {M, N, K},
     {ptrA, lda},            // TensorRef to A device tensor
@@ -70,22 +60,10 @@ cudaEventCreate(&endEvent);
     {ptrD, ldd},            // TensorRef to D device tensor - may be the same as C
     {alpha, beta}           // epilogue operation arguments
   });
-  cudaEventRecord(endEvent);
-  cudaEventSynchronize(endEvent);
-
 
   if (status != cutlass::Status::kSuccess) {
-    state.SkipWithError("Error!");
-    break ;
+    return -1;
   }
-  cudaEventElapsedTime(&runtime_ms, startEvent, endEvent);
-  state.SetIterationTime(runtime_ms / 10.0e-3);
-  }
-  const auto flops = 2.0 * M * N * K;
-  state.SetItemsProcessed(static_cast<int64_t>(state.iterations())*flops);
 
-  return ;
+  return 0;
 }
-BENCHMARK(CUTLASS_GEMM)->UseManualTime()->Unit(benchmark::kMillisecond)->Args({512,128,128})->Args({1024,1024,1024})->Args({8*1024,8*1024,8*1024});
-
-BENCHMARK_MAIN();
