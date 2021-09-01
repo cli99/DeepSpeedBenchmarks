@@ -312,6 +312,13 @@ void launch_input_tiled_gemm_kernel_v2(
   dim3 grid_dim(outputBlocks * block_reduce);
   dim3 block_dim(threads);
 
+  float runtime_ms = 0;
+  cudaEvent_t startEvent, endEvent;
+  cudaEventCreate(&startEvent);
+  cudaEventCreate(&endEvent);
+
+  cudaEventRecord(startEvent);
+
   input_tiled_gemm_kernel_v2<<<grid_dim, block_dim, 0, stream>>>(
       output, vals, weight, bias, hidden_dim, br2, input_size, output_size,
       outputBlocks, blockStride, scale, groups, block_sums, merge_count,
@@ -324,6 +331,11 @@ void launch_input_tiled_gemm_kernel_v2(
     block_reduce_kernel<<<grids, blocks, 0, stream>>>(
         output, block_sums, input_size, (output_size), add_gelu);
   }
+
+  cudaEventRecord(endEvent);
+  cudaEventSynchronize(endEvent);
+  cudaEventElapsedTime(&runtime_ms, startEvent, endEvent);
+  std::cout << "runtime = " << runtime_ms << " ms\n";
 }
 
 int main() {

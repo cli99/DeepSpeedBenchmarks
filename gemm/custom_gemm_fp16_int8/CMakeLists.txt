@@ -9,7 +9,10 @@ find_package(Torch REQUIRED HINTS /opt/conda/lib/python3.6/site-packages)
 add_executable(custom_gemm custom_gemm.cu)
 target_link_libraries(custom_gemm "${TORCH_LIBRARIES}" ${Python_LIBRARIES})
 
-list(APPEND NVCC_FLAGS -arch=sm_80)
+cuda_select_nvcc_arch_flags(CUDA_ARCH_OPTS Auto)
+
+
+list(APPEND NVCC_FLAGS  "${CUDA_ARCH_OPTS}" )
 target_include_directories(custom_gemm PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR} ${Python_INCLUDE_DIRS})
 # target_link_libraries(gemm PRIVATE benchmark::benchmark)
