@@ -5,6 +5,10 @@
 #include <cstdio>
 #include <cstdlib>
 #include <ctime>
+
+#include <torch/extension.h>
+
+
 namespace cg = cooperative_groups;
 
 #define INPUT_TILE 1
@@ -33,15 +37,42 @@ namespace cg = cooperative_groups;
 
 #define ACC_HALF true
 
+#define T __half
+
 inline __device__ float gelu(const float x)
 {
     float y = 0.5 * x * (1.0 + tanhf(0.7978845608028654 * x * (1.0 + 0.044715 * x * x)));
     return y;
 }
 
+int main() {
+    auto hidden_size = 5120;
+    torch::Tensor input = torch::rand({1, 1 ,hidden_size}, torch::TensorOptions()
+                       .dtype(torch::kFloat16)
+                       .layout(torch::kStrided)
+                       .device(torch::kCUDA));
+    torch::Tensor weight = torch::rand({hidden_size, 4*hidden_size},
+        torch::TensorOptions()
+            .dtype(torch::kFloat16)
+            .layout(torch::kStrided)
+            .device(torch::kCUDA)
+            .requires_grad(true));
+
+    auto input_cont = input.contiguous();
+    auto options = torch::TensorOptions()
+                       .dtype(input_cont.options().dtype())
+                       .layout(torch::kStrided)
+                       .device(torch::kCUDA)
+                       .requires_grad(false);
+
+    auto output = torch::empty({input_cont.size(0), input_cont.size(1), weight.size(1)}, options);
+    int bsz = input_cont.size(0) * input_cont.size(1);
+
+    auto block_sums = torch::empty(
+                {input_cont.size(0) * out_blocks, input_cont.size(1), weight.size(1)}, options);
 
 // https://github.com/microsoft/DeepSpeed-internal/blob/inference-specialized-only/csrc/transformer/inference_specialized/csrc/pt_binding.cpp#L575
-launch_input_tiled_gemm_kernel_v2((T*)output.data_ptr(),
+    launch_input_tiled_gemm_kernel_v2((T*)output.data_ptr(),
                                     (T*)input_cont.data_ptr(),
                                     (T*)weight.data_ptr(),
                                     (T*)nullptr,
@@ -52,58 +83,48 @@ launch_input_tiled_gemm_kernel_v2((T*)output.data_ptr(),
                                     false,
                                     Context::Instance().GetCurrentStream());
 
+    return 0
 
-// https://github.com/microsoft/DeepSpeed-internal/blob/inference-specialized-only/csrc/transformer/inference_specialized/csrc/custom_gemm.cu#L819
+}
+
+// https://github.com/microsoft/DeepSpeed-internal/blob/inference-specialized-only/csrc/transformer/inference_specialized/csrc/custom_gemm.cu#L929
 template <typename T>
 void launch_input_tiled_gemm_kernel_v2(T* output,
                                        const T* vals,
-                                       const int8_t* weight,
+                                       const T* weight,
                                        const T* bias,
+                                       T* block_sums,
                                        unsigned int hidden_dim,
                                        unsigned int input_size,
                                        unsigned int output_size,
-                                       float* scale,
-                                       unsigned int groups,
-                                       unsigned int merge_count,
-                                       T* block_sums,
                                        bool add_gelu,
                                        cudaStream_t stream)
 {
-    output_size /= 4;
+    output_size /= 2;
     int outputBlocks = (output_size - 1) / WARP_SIZE + 1;
 
     int block_reduce = (SMs > outputBlocks ? SMs / outputBlocks : 1);
     int br2 = (int)log2(block_reduce);
-
     block_reduce = (int)pow(2.0, (float)br2);
 
-    hidden_dim /= block_reduce;
-
     constexpr int threads = 1024;
-    int blockStride = output_size * hidden_dim;
+    int blockStride = (output_size * hidden_dim) / block_reduce;
 
     dim3 grid_dim(outputBlocks * block_reduce);
     dim3 block_dim(threads);
-
-    input_tiled_gemm_kernel_v2<<<grid_dim, block_dim, 0, stream>>>(
-        output,
-        vals,
-        weight,
-        bias,
-        hidden_dim,
-        br2,
-        input_size,
-        output_size,
-        outputBlocks,
-        blockStride,
-        scale,
-        groups,
-        block_sums,
-        merge_count,
-        (((hidden_dim << br2) >> (merge_count)) * (output_size << 2)) / groups,
-        add_gelu);
+    input_tiled_gemm_kernel_v2<<<grid_dim, block_dim, 0, stream>>>(output,
+                                                                   vals,
+                                                                   weight,
+                                                                   bias,
+                                                                   block_sums,
+                                                                   hidden_dim / block_reduce,
+                                                                   block_reduce,
+                                                                   input_size,
+                                                                   output_size,
+                                                                   outputBlocks,
+                                                                   blockStride,
+                                                                   add_gelu);
     if (block_reduce > 1) {
-        output_size <<= 1;
         dim3 grids(((output_size * input_size) - 1) / WARP_SIZE + 1);
         dim3 blocks(block_reduce * WARP_SIZE);
         block_reduce_kernel<<<grids, blocks, 0, stream>>>(
