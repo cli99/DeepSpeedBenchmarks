@@ -533,7 +533,7 @@ void allocat_workspace(unsigned hidden_dim, unsigned max_seq_len,
 }
 
 int main() {
-  // void run_int8(benchmark::State& state) {
+// void run_int8(benchmark::State& state) {
   // https://github.com/microsoft/DeepSpeed-internal/blob/inference-specialized-only/deepspeed/ops/transformer/inference/transformer_inference.py#L289
 
   auto hidden_size = 5120;
@@ -594,29 +594,36 @@ int main() {
                                         .layout(torch::kStrided)
                                         .device(torch::kCUDA));
 
-  cudaEvent_t startEvent, endEvent;
-  cudaEventCreate(&startEvent);
-  cudaEventCreate(&endEvent);
+  int cnt = 10;
+  float total = 0;
+  for (int i = 0; i < cnt; i++) {
+    cudaEvent_t startEvent, endEvent;
+    cudaEventCreate(&startEvent);
+    cudaEventCreate(&endEvent);
 
-  CUDA_CHECK(cudaEventRecord(startEvent, 0));
+    CUDA_CHECK(cudaEventRecord(startEvent, 0));
 
-  // https://github.com/microsoft/DeepSpeed-internal/blob/reyazda/fast-attn/csrc/transformer/inference_specialized/csrc/pt_binding.cpp#L688
-  launch_input_tiled_gemm_kernel_v2(
-      (T*)output.data_ptr(), (T*)input.data_ptr(), (int8_t*)weight.data_ptr(),
-      (T*)bias.data_ptr(), input.size(2), bsz, weight.size(1),
-      (float*)q_scale.data_ptr(), groups, merge_count,
-      (T*)(workspace + buff_size), true,
-      Context::Instance().GetCurrentStream());
-  CUDA_CHECK_ERROR();
-  CUDA_CHECK(cudaEventRecord(endEvent, 0));
-  CUDA_CHECK(cudaEventSynchronize(endEvent));
+    // https://github.com/microsoft/DeepSpeed-internal/blob/reyazda/fast-attn/csrc/transformer/inference_specialized/csrc/pt_binding.cpp#L688
+    launch_input_tiled_gemm_kernel_v2(
+        (T*)output.data_ptr(), (T*)input.data_ptr(), (int8_t*)weight.data_ptr(),
+        (T*)bias.data_ptr(), input.size(2), bsz, weight.size(1),
+        (float*)q_scale.data_ptr(), groups, merge_count,
+        (T*)(workspace + buff_size), true,
+        Context::Instance().GetCurrentStream());
+    CUDA_CHECK_ERROR();
+    CUDA_CHECK(cudaEventRecord(endEvent, 0));
+    CUDA_CHECK(cudaEventSynchronize(endEvent));
 
-  float runtime_ms = 0;
-  cudaEventElapsedTime(&runtime_ms, startEvent, endEvent);
-  // state.SetIterationTime(runtime_ms / 10.0e3);
-  std::cout << "runtime_ms = " << runtime_ms << " ms\n";
+    float runtime_ms = 0;
+    cudaEventElapsedTime(&runtime_ms, startEvent, endEvent);
+    // state.SetIterationTime(runtime_ms / 10.0e3);
+    std::cout << "runtime_ms = " << runtime_ms << " ms\n";
+    total += runtime_ms;
+  }
+  std::cout << "average runtime_ms = " << total/cnt << " ms\n";
 }
 
+// int main() {
 void run_fp16(benchmark::State& state) {
   auto hidden_size = 5120;
   torch::Tensor input =
@@ -636,7 +643,13 @@ void run_fp16(benchmark::State& state) {
                      .device(torch::kCUDA)
                      .requires_grad(false);
 
+  using T = __half;
+
   auto workspace = Context::Instance().GetWorkSpace();
+  if (!workspace) {
+    allocat_workspace<T>(input.size(2), 256, input.size(0));
+    workspace = Context::Instance().GetWorkSpace();
+  }
   auto output = torch::from_blob(
       workspace, {input.size(0), input.size(1), weight.size(1)}, options);
 
@@ -644,7 +657,6 @@ void run_fp16(benchmark::State& state) {
 
   int bsz = input.size(0) * input.size(1);
 
-  using T = __half;
 
   int out_blocks = (weight.size(1) - 1) / (CACHLINE >> 1) + 1;
   out_blocks = (out_blocks < SMs) ? (SMs / out_blocks) : 1;
@@ -656,31 +668,38 @@ void run_fp16(benchmark::State& state) {
       {input.size(0) * out_blocks, input.size(1), weight.size(1)}, options);
 
   torch::Tensor bias =
-      torch::rand({1, 1, hidden_size}, torch::TensorOptions()
-                                           .dtype(torch::kFloat16)
-                                           .layout(torch::kStrided)
-                                           .device(torch::kCUDA));
+      torch::rand({1, 1,hidden_size}, torch::TensorOptions()
+                                        .dtype(torch::kFloat16)
+                                        .layout(torch::kStrided)
+                                        .device(torch::kCUDA));
 
   cudaEvent_t startEvent, endEvent;
   cudaEventCreate(&startEvent);
   cudaEventCreate(&endEvent);
 
-  CUDA_CHECK(cudaEventRecord(startEvent, 0));
+  int cnt = 10;
+  float total = 0;
+  for (int i = 0; i < cnt; i++) {
+    CUDA_CHECK(cudaEventRecord(startEvent, 0));
 
-  // https://github.com/microsoft/DeepSpeed-internal/blob/reyazda/fast-attn/csrc/transformer/inference_specialized/csrc/pt_binding.cpp#L549
+    // https://github.com/microsoft/DeepSpeed-internal/blob/reyazda/fast-attn/csrc/transformer/inference_specialized/csrc/pt_binding.cpp#L549
 
-  launch_input_tiled_gemm_kernel_v2(
-      (T*)output.data_ptr(), (T*)input.data_ptr(), (T*)weight.data_ptr(),
-      (T*)nullptr, (T*)block_sums.data_ptr(), input.size(2), bsz,
-      weight.size(1), false, Context::Instance().GetCurrentStream());
-  CUDA_CHECK_ERROR();
-  CUDA_CHECK(cudaEventRecord(endEvent, 0));
-  CUDA_CHECK(cudaEventSynchronize(endEvent));
+    launch_input_tiled_gemm_kernel_v2(
+        (T*)output.data_ptr(), (T*)input.data_ptr(), (T*)weight.data_ptr(),
+        (T*)nullptr, (T*)block_sums.data_ptr(), input.size(2), bsz, weight.size(1),
+        false, Context::Instance().GetCurrentStream());
+    CUDA_CHECK_ERROR();
+    CUDA_CHECK(cudaEventRecord(endEvent, 0));
+    CUDA_CHECK(cudaEventSynchronize(endEvent));
 
-  float runtime_ms = 0;
-  cudaEventElapsedTime(&runtime_ms, startEvent, endEvent);
-  // state.SetIterationTime(runtime_ms / 10.0e3);
-  std::cout << "runtime_ms = " << runtime_ms << " ms\n";
+    float runtime_ms = 0;
+    cudaEventElapsedTime(&runtime_ms, startEvent, endEvent);
+    // state.SetIterationTime(runtime_ms / 10.0e3);
+    std::cout << "runtime_ms = " << runtime_ms << " ms\n";
+    total += runtime_ms;
+  }
+  std::cout << "average runtime_ms = " << total/cnt << " ms\n";
+
 }
 
 // BENCHMARK(run_int8)->UseManualTime()->Unit(benchmark::kMillisecond);
