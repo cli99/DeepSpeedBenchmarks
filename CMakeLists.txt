@@ -33,7 +33,7 @@ conan_cmake_install(PATH_OR_REFERENCE .
 
 find_package(benchmark REQUIRED)
 
-add_executable(gemm cutlass/gemm.cu)
+add_executable(gemm gemm/cutlass_gemm.cu)
 
 list(APPEND NVCC_FLAGS -arch=sm_80)
 target_include_directories(gemm PRIVATE

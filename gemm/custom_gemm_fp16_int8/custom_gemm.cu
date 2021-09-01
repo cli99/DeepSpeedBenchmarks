@@ -1,6 +1,7 @@
 #include <limits>
 // #include "custom_cuda_layers.h"
 
+#include <benchmark/benchmark.h>
 #include <cooperative_groups.h>
 #include <cuda_profiler_api.h>
 #include <torch/extension.h>
@@ -291,11 +292,14 @@ __global__ void block_reduce_kernel(__half* output, __half* block_sums,
 
 // https://github.com/microsoft/DeepSpeed-internal/blob/inference-specialized-only/csrc/transformer/inference_specialized/csrc/custom_gemm.cu#L819
 template <typename T>
-void launch_input_tiled_gemm_kernel_v2(
-    T* output, const T* vals, const int8_t* weight, const T* bias,
-    unsigned int hidden_dim, unsigned int input_size, unsigned int output_size,
-    float* scale, unsigned int groups, unsigned int merge_count, T* block_sums,
-    bool add_gelu, cudaStream_t stream) {
+void launch_input_tiled_gemm_kernel_v2(benchmark::State& state, T* output,
+                                       const T* vals, const int8_t* weight,
+                                       const T* bias, unsigned int hidden_dim,
+                                       unsigned int input_size,
+                                       unsigned int output_size, float* scale,
+                                       unsigned int groups,
+                                       unsigned int merge_count, T* block_sums,
+                                       bool add_gelu, cudaStream_t stream) {
   output_size /= 4;
   int outputBlocks = (output_size - 1) / WARP_SIZE + 1;
 
@@ -312,33 +316,36 @@ void launch_input_tiled_gemm_kernel_v2(
   dim3 grid_dim(outputBlocks * block_reduce);
   dim3 block_dim(threads);
 
-  float runtime_ms = 0;
   cudaEvent_t startEvent, endEvent;
   cudaEventCreate(&startEvent);
   cudaEventCreate(&endEvent);
 
-  cudaEventRecord(startEvent);
+  for (auto _ : state) {
+    cudaEventRecord(startEvent, stream);
 
-  input_tiled_gemm_kernel_v2<<<grid_dim, block_dim, 0, stream>>>(
-      output, vals, weight, bias, hidden_dim, br2, input_size, output_size,
-      outputBlocks, blockStride, scale, groups, block_sums, merge_count,
-      (((hidden_dim << br2) >> (merge_count)) * (output_size << 2)) / groups,
-      add_gelu);
-  if (block_reduce > 1) {
-    output_size <<= 1;
-    dim3 grids(((output_size * input_size) - 1) / WARP_SIZE + 1);
-    dim3 blocks(block_reduce * WARP_SIZE);
-    block_reduce_kernel<<<grids, blocks, 0, stream>>>(
-        output, block_sums, input_size, (output_size), add_gelu);
+    input_tiled_gemm_kernel_v2<<<grid_dim, block_dim, 0, stream>>>(
+        output, vals, weight, bias, hidden_dim, br2, input_size, output_size,
+        outputBlocks, blockStride, scale, groups, block_sums, merge_count,
+        (((hidden_dim << br2) >> (merge_count)) * (output_size << 2)) / groups,
+        add_gelu);
+    if (block_reduce > 1) {
+      output_size <<= 1;
+      dim3 grids(((output_size * input_size) - 1) / WARP_SIZE + 1);
+      dim3 blocks(block_reduce * WARP_SIZE);
+      block_reduce_kernel<<<grids, blocks, 0, stream>>>(
+          output, block_sums, input_size, (output_size), add_gelu);
+    }
+
+    CUDA_CHECK(cudaEventRecord(endEvent, stream));
+    CUDA_CHECK(cudaEventSynchronize(endEvent));
+
+    float runtime_ms = 0;
+    cudaEventElapsedTime(&runtime_ms, startEvent, endEvent);
+    state.SetIterationTime(runtime_ms / 10.0e3);
   }
-
-  cudaEventRecord(endEvent);
-  cudaEventSynchronize(endEvent);
-  cudaEventElapsedTime(&runtime_ms, startEvent, endEvent);
-  std::cout << "runtime = " << runtime_ms << " ms\n";
 }
 
-int main() {
+void run(benchmark::State& state) {
   // https://github.com/microsoft/DeepSpeed-internal/blob/inference-specialized-only/deepspeed/ops/transformer/inference/transformer_inference.py#L289
 
   auto hidden_size = 5120;
@@ -386,10 +393,12 @@ int main() {
   using T = __half;
   // https://github.com/microsoft/DeepSpeed-internal/blob/inference-specialized-only/csrc/transformer/inference_specialized/csrc/pt_binding.cpp#L646
   launch_input_tiled_gemm_kernel_v2(
-      (T*)output.data_ptr(), (T*)input_cont.data_ptr(),
+      state, (T*)output.data_ptr(), (T*)input_cont.data_ptr(),
       (int8_t*)weight.data_ptr(), (T*)nullptr, input_cont.size(2), bsz,
       weight.size(1), (float*)q_scale.data_ptr(), groups, merge_count,
       (T*)block_sums.data_ptr(), false, Context::Instance().GetCurrentStream());
-
-  return 0;
 }
+
+BENCHMARK(run)->UseManualTime()->Unit(benchmark::kMillisecond);
+
+BENCHMARK_MAIN();

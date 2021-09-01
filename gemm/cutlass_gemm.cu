@@ -1,24 +1,23 @@
-#include <cutlass/numeric_types.h>
-#include <cutlass/gemm/device/gemm.h>
-
-#include <cutlass/util/host_tensor.h>
+#include <iostream>
 
 #include <benchmark/benchmark.h>
+#include <cutlass/gemm/device/gemm.h>
+#include <cutlass/numeric_types.h>
+#include <cutlass/util/host_tensor.h>
 
-static void CUTLASS_GEMM(benchmark::State& state) {
-
+static void CUTLASS_GEMM(benchmark::State &state) {
   // Define the GEMM operation
   using Gemm = cutlass::gemm::device::Gemm<
-    cutlass::half_t,                           // ElementA
-    cutlass::layout::ColumnMajor,              // LayoutA
-    cutlass::half_t,                           // ElementB
-    cutlass::layout::ColumnMajor,              // LayoutB
-    cutlass::half_t,                           // ElementOutput
-    cutlass::layout::ColumnMajor,              // LayoutOutput
-    float,                                     // ElementAccumulator
-    cutlass::arch::OpClassTensorOp,            // tag indicating Tensor Cores
-    cutlass::arch::Sm75                        // tag indicating target GPU compute architecture
-  >;
+      cutlass::half_t,                 // ElementA
+      cutlass::layout::ColumnMajor,    // LayoutA
+      cutlass::half_t,                 // ElementB
+      cutlass::layout::ColumnMajor,    // LayoutB
+      cutlass::half_t,                 // ElementOutput
+      cutlass::layout::ColumnMajor,    // LayoutOutput
+      float,                           // ElementAccumulator
+      cutlass::arch::OpClassTensorOp,  // tag indicating Tensor Cores
+      cutlass::arch::Sm75  // tag indicating target GPU compute architecture
+      >;
 
   Gemm gemm_op;
   cutlass::Status status;
@@ -44,7 +43,7 @@ static void CUTLASS_GEMM(benchmark::State& state) {
   cutlass::half_t const *ptrA = A.device_data();
   cutlass::half_t const *ptrB = B.device_data();
   cutlass::half_t const *ptrC = C.device_data();
-  cutlass::half_t       *ptrD = C.device_data();
+  cutlass::half_t *ptrD = C.device_data();
 
   int lda = A.device_ref().stride(0);
   int ldb = B.device_ref().stride(0);
@@ -54,38 +53,42 @@ static void CUTLASS_GEMM(benchmark::State& state) {
   // Launch GEMM on the device
   //
 
-float runtime_ms = 0;
-cudaEvent_t startEvent, endEvent;
-cudaEventCreate(&startEvent);
-cudaEventCreate(&endEvent);
+  float runtime_ms = 0;
+  cudaEvent_t startEvent, endEvent;
+  cudaEventCreate(&startEvent);
+  cudaEventCreate(&endEvent);
 
   for (auto _ : state) {
-      cudaEventRecord(startEvent);
+    cudaEventRecord(startEvent);
 
-  status = gemm_op({
-    {M, N, K},
-    {ptrA, lda},            // TensorRef to A device tensor
-    {ptrB, ldb},            // TensorRef to B device tensor
-    {ptrC, ldc},            // TensorRef to C device tensor
-    {ptrD, ldd},            // TensorRef to D device tensor - may be the same as C
-    {alpha, beta}           // epilogue operation arguments
-  });
-  cudaEventRecord(endEvent);
-  cudaEventSynchronize(endEvent);
+    status = gemm_op({
+        {M, N, K},
+        {ptrA, lda},   // TensorRef to A device tensor
+        {ptrB, ldb},   // TensorRef to B device tensor
+        {ptrC, ldc},   // TensorRef to C device tensor
+        {ptrD, ldd},   // TensorRef to D device tensor - may be the same as C
+        {alpha, beta}  // epilogue operation arguments
+    });
+    cudaEventRecord(endEvent);
+    cudaEventSynchronize(endEvent);
 
-
-  if (status != cutlass::Status::kSuccess) {
-    state.SkipWithError("Error!");
-    break ;
+    if (status != cutlass::Status::kSuccess) {
+      state.SkipWithError("Error!");
+      break;
+    }
+    cudaEventElapsedTime(&runtime_ms, startEvent, endEvent);
+    state.SetIterationTime(runtime_ms / 10.0e3);
   }
-  cudaEventElapsedTime(&runtime_ms, startEvent, endEvent);
-  state.SetIterationTime(runtime_ms / 10.0e-3);
-  }
+  std::cout << "runtime_ms = " << runtime_ms << " ms\n";
   const auto flops = 2.0 * M * N * K;
-  state.SetItemsProcessed(static_cast<int64_t>(state.iterations())*flops);
+  state.SetItemsProcessed(static_cast<int64_t>(state.iterations()) * flops);
 
-  return ;
+  return;
 }
-BENCHMARK(CUTLASS_GEMM)->UseManualTime()->Unit(benchmark::kMillisecond)->Args({1,5120,20480})->Args({1024,1024,1024});
+BENCHMARK(CUTLASS_GEMM)
+    ->UseManualTime()
+    ->Unit(benchmark::kMillisecond)
+    ->Args({512, 512, 512})
+    ->Args({1024, 1024, 1024});
 
 BENCHMARK_MAIN();
