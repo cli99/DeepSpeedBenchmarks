@@ -21,3 +21,23 @@
       exit(EXIT_FAILURE);                                               \
     }                                                                   \
   }
+
+void CheckCudaErrorAux(const char* file, unsigned line)
+
+{
+
+    cudaError_t err = cudaGetLastError();
+
+    if (err == cudaSuccess) return;
+
+    std::cerr << cudaGetErrorString(err) << "(" << err << ") at " << file << ":" << line
+
+              << std::endl;
+
+    throw std::runtime_error("CUDA ERROR!!!\n");
+
+}
+
+
+
+#define CUDA_CHECK_ERROR() CheckCudaErrorAux(__FILE__, __LINE__)

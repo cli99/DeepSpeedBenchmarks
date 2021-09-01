@@ -10,6 +10,7 @@
 #include "curand.h"
 
 #define WARP_SIZE 32
+#pragma once
 
 #define CUDA_CHECK(callstr)                                                                    \
     {                                                                                          \
@@ -40,7 +41,7 @@ inline int DS_GET_BLOCKS(const int N)
 
 class Context {
 public:
-    Context() : _workspace(nullptr), _seed(42), _curr_offset(0)
+    Context() : _workspace(nullptr), _seed(42), _curr_offset(0), _token_length(0)
     {
         curandCreateGenerator(&_gen, CURAND_RNG_PSEUDO_DEFAULT);
         curandSetPseudoRandomGeneratorSeed(_gen, 123);
@@ -64,20 +65,27 @@ public:
         return _ctx;
     }
 
-    void GenWorkSpace(size_t size)
+    void GenWorkSpace(size_t size, size_t val_size)
     {
         if (!_workspace) {
             assert(_workspace == nullptr);
-            cudaMalloc(&_workspace, size);
+            cudaMalloc(&_workspace, size * val_size);
         } else if (_workSpaceSize < size) {
             cudaFree(_workspace);
-            cudaMalloc(&_workspace, size);
+            cudaMalloc(&_workspace, size * val_size);
         }
 
         _workSpaceSize = size;
     }
-
+    size_t get_workspace_size() const { return _workSpaceSize; }
     void* GetWorkSpace() { return _workspace; }
+
+    inline unsigned new_token(unsigned layer_id)
+    {
+        if (layer_id == 0) _token_length++;
+        return _token_length;
+    }
+    inline void reset_tokens() { _token_length = 0; }
 
     curandGenerator_t& GetRandGenerator() { return _gen; }
 
@@ -108,5 +116,7 @@ private:
     uint64_t _seed;
     uint64_t _curr_offset;
     size_t _workSpaceSize;
+    unsigned _token_length;
     std::vector<std::array<int, 3>> _gemm_algos;
 };
+
