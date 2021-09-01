@@ -238,56 +238,55 @@ __global__ void input_tiled_gemm_kernel_v2(
 }
 
 // https://github.com/microsoft/DeepSpeed-internal/blob/inference-specialized-only/csrc/transformer/inference_specialized/csrc/custom_gemm.cu#L767
-__global__ void block_reduce_kernel(__half* output,
-                                    __half* block_sums,
-                                    unsigned batch,
-                                    unsigned int output_size,
-                                    bool add_gelu = false)
-{
-    cg::thread_block b = cg::this_thread_block();
-    cg::thread_block_tile<32> g = cg::tiled_partition<32>(b);
-    unsigned total_count = batch * output_size;
-    unsigned int gid = threadIdx.x >> 5;
-    unsigned int lane = threadIdx.x & 0x1f;
-    unsigned int warp_num = blockDim.x >> 5;
+__global__ void block_reduce_kernel(__half* output, __half* block_sums,
+                                    unsigned batch, unsigned int output_size,
+                                    bool add_gelu = false) {
+  cg::thread_block b = cg::this_thread_block();
+  cg::thread_block_tile<32> g = cg::tiled_partition<32>(b);
+  unsigned total_count = batch * output_size;
+  unsigned int gid = threadIdx.x >> 5;
+  unsigned int lane = threadIdx.x & 0x1f;
+  unsigned int warp_num = blockDim.x >> 5;
 
-    __half2* output_cast = reinterpret_cast<__half2*>(output);
-    __half2* block_sums_cast = reinterpret_cast<__half2*>(block_sums);
+  __half2* output_cast = reinterpret_cast<__half2*>(output);
+  __half2* block_sums_cast = reinterpret_cast<__half2*>(block_sums);
 
-    unsigned int col_index = blockIdx.x * WARP_SIZE + lane;
-    block_sums_cast += gid * output_size;
+  unsigned int col_index = blockIdx.x * WARP_SIZE + lane;
+  block_sums_cast += gid * output_size;
 
-    if (col_index < total_count) {
-        __shared__ __half2 data_shared[MAX_WARP_NUM * (WARP_SIZE + 1)];
+  if (col_index < total_count) {
+    __shared__ __half2 data_shared[MAX_WARP_NUM * (WARP_SIZE + 1)];
 
-        data_shared[gid * (WARP_SIZE) + lane] =
-            block_sums_cast[(col_index / output_size) * (warp_num * output_size) +
-                            col_index % output_size];
+    data_shared[gid * (WARP_SIZE) + lane] =
+        block_sums_cast[(col_index / output_size) * (warp_num * output_size) +
+                        col_index % output_size];
 
-        b.sync();
+    b.sync();
 
-        float2 data = __half22float2(data_shared[(lane % warp_num) * WARP_SIZE +
-                                                 gid * (WARP_SIZE / warp_num) + (lane / warp_num)]);
+    float2 data = __half22float2(
+        data_shared[(lane % warp_num) * WARP_SIZE +
+                    gid * (WARP_SIZE / warp_num) + (lane / warp_num)]);
 
-        b.sync();
+    b.sync();
 #pragma unroll
-        for (int i = 1; i < warp_num; i <<= 1) {
-            data.x += g.shfl_xor(data.x, i);
-            data.y += g.shfl_xor(data.y, i);
-        }
-
-        if ((lane % warp_num) == 0) {
-            if (add_gelu) {
-                data.x = gelu(data.x);
-                data.y = gelu(data.y);
-            }
-            data_shared[gid * (WARP_SIZE / warp_num) + (lane / warp_num)] = __float22half2_rn(data);
-        }
-
-        b.sync();
-
-        if (gid == 0) output_cast[col_index] = data_shared[lane];
+    for (int i = 1; i < warp_num; i <<= 1) {
+      data.x += g.shfl_xor(data.x, i);
+      data.y += g.shfl_xor(data.y, i);
     }
+
+    if ((lane % warp_num) == 0) {
+      if (add_gelu) {
+        data.x = gelu(data.x);
+        data.y = gelu(data.y);
+      }
+      data_shared[gid * (WARP_SIZE / warp_num) + (lane / warp_num)] =
+          __float22half2_rn(data);
+    }
+
+    b.sync();
+
+    if (gid == 0) output_cast[col_index] = data_shared[lane];
+  }
 }
 
 // https://github.com/microsoft/DeepSpeed-internal/blob/inference-specialized-only/csrc/transformer/inference_specialized/csrc/custom_gemm.cu#L819

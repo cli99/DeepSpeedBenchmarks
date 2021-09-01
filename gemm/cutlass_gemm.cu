@@ -86,6 +86,6 @@ cudaEventCreate(&endEvent);
 
   return ;
 }
-BENCHMARK(CUTLASS_GEMM)->UseManualTime()->Unit(benchmark::kMillisecond)->Args({512,128,128})->Args({1024,1024,1024})->Args({8*1024,8*1024,8*1024});
+BENCHMARK(CUTLASS_GEMM)->UseManualTime()->Unit(benchmark::kMillisecond)->Args({1,5120,20480})->Args({1024,1024,1024});
 
 BENCHMARK_MAIN();
