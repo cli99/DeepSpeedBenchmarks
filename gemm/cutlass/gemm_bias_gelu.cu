@@ -42,13 +42,17 @@
 #include "cutlass/util/tensor_view_io.h"
 #include "helper.h"
 
-// The code section below describes datatype for input, output matrices and computation between
-// elements in input matrices.
-using ElementAccumulator = int32_t;                   // <- data type of accumulator
-using ElementComputeEpilogue = ElementAccumulator;  // <- data type of epilogue operations
-using ElementInputA = int8_t;// cutlass::half_t;              // <- data type of elements in input matrix A
-using ElementInputB = int8_t;              // <- data type of elements in input matrix B
-using ElementOutput = int32_t;                        // <- data type of elements in output matrix D
+// The code section below describes datatype for input, output matrices and
+// computation between elements in input matrices.
+using ElementAccumulator = float;  // <- data type of accumulator
+using ElementComputeEpilogue =
+    ElementAccumulator;  // <- data type of epilogue operations
+using ElementInputA =
+    cutlass::half_t;  // cutlass::half_t;              // <- data type of
+                      // elements in input matrix A
+using ElementInputB =
+    cutlass::half_t;          // <- data type of elements in input matrix B
+using ElementOutput = float;  // <- data type of elements in output matrix D
 
 // The code section below describes matrix layout of input and output matrices.
 // Column Major for Matrix A, B and C.
@@ -93,16 +97,18 @@ using SwizzleThreadBlock =
 //    d_ij = max(0, alpha * sum_k(a_ik * b_kj) + c_ij )
 //
 using EpilogueOp = cutlass::epilogue::thread::LinearCombinationRelu<
-    ElementOutput,                                        // <- data type of output matrix
-    128 / cutlass::sizeof_bits<ElementOutput>::value,     // <- this is the number of elements per
-                                                          // vectorized memory access. For half
-                                                          // precision, it's 8 elements. This becomes
-                                                          // the vector width of math instructions in
-                                                          // epilogue too
-    ElementAccumulator,                                   // <- data type of accumulator
-    ElementComputeEpilogue,                               // <- data type for alpha in linear combination function
-    cutlass::epilogue::thread::ScaleType::NoBetaScaling>; // <- alpha x C + bias
-
+    ElementOutput,  // <- data type of output matrix
+    128 / cutlass::sizeof_bits<
+              ElementOutput>::value,  // <- this is the number of elements per
+                                      // vectorized memory access. For half
+                                      // precision, it's 8 elements. This
+                                      // becomes the vector width of math
+                                      // instructions in epilogue too
+    ElementAccumulator,      // <- data type of accumulator
+    ElementComputeEpilogue,  // <- data type for alpha in linear combination
+                             // function
+    cutlass::epilogue::thread::ScaleType::NoBetaScaling>;  // <- alpha x C +
+                                                           // bias
 
 // using EpilogueOp = cutlass::epilogue::thread::FastLinearCombinationClamp<
 //       ElementOutput,
@@ -204,13 +210,14 @@ int run() {
   status = gemm_op.initialize(arguments, workspace.get());
   CUTLASS_CHECK(status);
 
-  int cnt = 10;
+  cudaEvent_t startEvent, endEvent;
+  cudaEventCreate(&startEvent);
+  cudaEventCreate(&endEvent);
+
+  int cnt = 30;
   float total = 0;
   for (int i = 0; i < cnt; i++) {
     // Launch initialized CUTLASS kernel
-    cudaEvent_t startEvent, endEvent;
-    cudaEventCreate(&startEvent);
-    cudaEventCreate(&endEvent);
 
     CUDA_CHECK(cudaEventRecord(startEvent, 0));
 
@@ -225,47 +232,49 @@ int run() {
     cudaEventElapsedTime(&runtime_ms, startEvent, endEvent);
 
     std::cout << "runtime_ms = " << runtime_ms << " ms\n";
-    total += runtime_ms;
+    if (i != 1) {
+      total += runtime_ms;
+    }
   }
-  std::cout << "average runtime_ms = " << total / cnt << " ms\n";
-//
-// Create instantiation for device reference gemm kernel
-//
+  std::cout << "average runtime_ms = " << total / (cnt-1) << " ms\n";
+  //
+  // Create instantiation for device reference gemm kernel
+  //
 
-cutlass::reference::device::Gemm<ElementInputA, LayoutInputA, ElementInputB,
-                                 LayoutInputB, ElementOutput, LayoutOutput,
-                                 ElementComputeEpilogue, ElementComputeEpilogue>
-    gemm_device_reference;
+  cutlass::reference::device::Gemm<
+      ElementInputA, LayoutInputA, ElementInputB, LayoutInputB, ElementOutput,
+      LayoutOutput, ElementComputeEpilogue, ElementComputeEpilogue>
+      gemm_device_reference;
 
-// Launch device reference to compute strictly the product A * B
-gemm_device_reference(problem_size, alpha, tensor_a.device_ref(),
-                      tensor_b.device_ref(), 0, tensor_ref_d.device_ref());
+  // Launch device reference to compute strictly the product A * B
+  gemm_device_reference(problem_size, alpha, tensor_a.device_ref(),
+                        tensor_b.device_ref(), 0, tensor_ref_d.device_ref());
 
-// Wait for kernels to finish
-cudaDeviceSynchronize();
+  // Wait for kernels to finish
+  cudaDeviceSynchronize();
 
-// Copy output data from CUTLASS and reference kernel to host for comparison
-tensor_d.sync_host();
-tensor_ref_d.sync_host();
+  // Copy output data from CUTLASS and reference kernel to host for comparison
+  tensor_d.sync_host();
+  tensor_ref_d.sync_host();
 
-// Compute bias + relu in host code
-for (int i = 0; i < problem_size.m(); ++i) {
-  for (int j = 0; j < problem_size.n(); ++j) {
-    tensor_ref_d.at({i, j}) = std::max(
-        ElementOutput(0),
-        ElementOutput(tensor_ref_d.at({i, j}) + tensor_c_bias.at({i, 0})));
+  // Compute bias + relu in host code
+  for (int i = 0; i < problem_size.m(); ++i) {
+    for (int j = 0; j < problem_size.n(); ++j) {
+      tensor_ref_d.at({i, j}) = std::max(
+          ElementOutput(0),
+          ElementOutput(tensor_ref_d.at({i, j}) + tensor_c_bias.at({i, 0})));
+    }
   }
-}
 
-// Check if output from CUTLASS kernel and reference kernel are equal or not
-std::cout << (cutlass::reference::host::TensorEquals(tensor_d.host_view(),
-                                                     tensor_ref_d.host_view())
-                  ? "Passed"
-                  : "Failed")
-          << std::endl;
+  // Check if output from CUTLASS kernel and reference kernel are equal or not
+  std::cout << (cutlass::reference::host::TensorEquals(tensor_d.host_view(),
+                                                       tensor_ref_d.host_view())
+                    ? "Passed"
+                    : "Failed")
+            << std::endl;
 
-CUTLASS_CHECK(status);
-return 0;
+  CUTLASS_CHECK(status);
+  return 0;
 }
 
 int main() {

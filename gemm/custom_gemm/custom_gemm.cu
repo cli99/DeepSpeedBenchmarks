@@ -533,7 +533,7 @@ void allocat_workspace(unsigned hidden_dim, unsigned max_seq_len,
 }
 
 int main() {
-// void run_int8(benchmark::State& state) {
+  // void run_int8(benchmark::State& state) {
   // https://github.com/microsoft/DeepSpeed-internal/blob/inference-specialized-only/deepspeed/ops/transformer/inference/transformer_inference.py#L289
 
   auto hidden_size = 5120;
@@ -594,7 +594,7 @@ int main() {
                                         .layout(torch::kStrided)
                                         .device(torch::kCUDA));
 
-  int cnt = 10;
+  int cnt = 30;
   float total = 0;
   for (int i = 0; i < cnt; i++) {
     cudaEvent_t startEvent, endEvent;
@@ -606,9 +606,9 @@ int main() {
     // https://github.com/microsoft/DeepSpeed-internal/blob/reyazda/fast-attn/csrc/transformer/inference_specialized/csrc/pt_binding.cpp#L688
     launch_input_tiled_gemm_kernel_v2(
         (T*)output.data_ptr(), (T*)input.data_ptr(), (int8_t*)weight.data_ptr(),
-        (T*)bias.data_ptr(), input.size(2), bsz, weight.size(1),
+        (T*)nullptr, input.size(2), bsz, weight.size(1),
         (float*)q_scale.data_ptr(), groups, merge_count,
-        (T*)(workspace + buff_size), true,
+        (T*)(workspace + buff_size), false,
         Context::Instance().GetCurrentStream());
     CUDA_CHECK_ERROR();
     CUDA_CHECK(cudaEventRecord(endEvent, 0));
@@ -618,9 +618,11 @@ int main() {
     cudaEventElapsedTime(&runtime_ms, startEvent, endEvent);
     // state.SetIterationTime(runtime_ms / 10.0e3);
     std::cout << "runtime_ms = " << runtime_ms << " ms\n";
-    total += runtime_ms;
+    if (i != 1) {
+      total += runtime_ms;
+    }
   }
-  std::cout << "average runtime_ms = " << total/cnt << " ms\n";
+  std::cout << "average runtime_ms = " << total / (cnt - 1) << " ms\n";
 }
 
 // int main() {
@@ -657,7 +659,6 @@ void run_fp16(benchmark::State& state) {
 
   int bsz = input.size(0) * input.size(1);
 
-
   int out_blocks = (weight.size(1) - 1) / (CACHLINE >> 1) + 1;
   out_blocks = (out_blocks < SMs) ? (SMs / out_blocks) : 1;
   int br2 = (int)log2(out_blocks);
@@ -668,16 +669,16 @@ void run_fp16(benchmark::State& state) {
       {input.size(0) * out_blocks, input.size(1), weight.size(1)}, options);
 
   torch::Tensor bias =
-      torch::rand({1, 1,hidden_size}, torch::TensorOptions()
-                                        .dtype(torch::kFloat16)
-                                        .layout(torch::kStrided)
-                                        .device(torch::kCUDA));
+      torch::rand({1, 4 * hidden_size}, torch::TensorOptions()
+                                            .dtype(torch::kFloat16)
+                                            .layout(torch::kStrided)
+                                            .device(torch::kCUDA));
 
   cudaEvent_t startEvent, endEvent;
   cudaEventCreate(&startEvent);
   cudaEventCreate(&endEvent);
 
-  int cnt = 10;
+  int cnt = 30;
   float total = 0;
   for (int i = 0; i < cnt; i++) {
     CUDA_CHECK(cudaEventRecord(startEvent, 0));
@@ -686,8 +687,8 @@ void run_fp16(benchmark::State& state) {
 
     launch_input_tiled_gemm_kernel_v2(
         (T*)output.data_ptr(), (T*)input.data_ptr(), (T*)weight.data_ptr(),
-        (T*)nullptr, (T*)block_sums.data_ptr(), input.size(2), bsz, weight.size(1),
-        false, Context::Instance().GetCurrentStream());
+        (T*)nullptr, (T*)block_sums.data_ptr(), input.size(2), bsz,
+        weight.size(1), false, Context::Instance().GetCurrentStream());
     CUDA_CHECK_ERROR();
     CUDA_CHECK(cudaEventRecord(endEvent, 0));
     CUDA_CHECK(cudaEventSynchronize(endEvent));
@@ -696,10 +697,11 @@ void run_fp16(benchmark::State& state) {
     cudaEventElapsedTime(&runtime_ms, startEvent, endEvent);
     // state.SetIterationTime(runtime_ms / 10.0e3);
     std::cout << "runtime_ms = " << runtime_ms << " ms\n";
-    total += runtime_ms;
+    if (i != 1) {
+      total += runtime_ms;
+    }
   }
-  std::cout << "average runtime_ms = " << total/cnt << " ms\n";
-
+  std::cout << "average runtime_ms = " << total / (cnt - 1) << " ms\n";
 }
 
 // BENCHMARK(run_int8)->UseManualTime()->Unit(benchmark::kMillisecond);

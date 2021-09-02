@@ -46,3 +46,31 @@ target_compile_options(
     PRIVATE
     $<$<COMPILE_LANGUAGE:CUDA>:${NVCC_FLAGS}>
 )
+
+add_executable(volta_tensorop_gemm volta_tensorop_gemm.cu)
+
+list(APPEND NVCC_FLAGS -arch=sm_70)
+target_include_directories(volta_tensorop_gemm PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/cutlass/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/cutlass/tools/util/include)
+target_link_libraries(volta_tensorop_gemm PRIVATE benchmark::benchmark)
+target_compile_options(
+    volta_tensorop_gemm
+    PRIVATE
+    $<$<COMPILE_LANGUAGE:CUDA>:${NVCC_FLAGS}>
+)
+
+add_executable(gemm gemm.cu)
+
+list(APPEND NVCC_FLAGS -arch=sm_70)
+target_include_directories(gemm PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/cutlass/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/cutlass/tools/util/include)
+target_link_libraries(gemm PRIVATE benchmark::benchmark)
+target_compile_options(
+    gemm
+    PRIVATE
+    $<$<COMPILE_LANGUAGE:CUDA>:${NVCC_FLAGS}>
+)

@@ -2,6 +2,9 @@
 #include <cutlass/gemm/device/gemm.h>
 
 #include <cutlass/util/host_tensor.h>
+#include "helper.h"
+#include <algorithm>
+#include <iostream>
 
 int main() {
 
@@ -24,9 +27,9 @@ int main() {
   //
   // Define the problem size
   //
-  int M = 512;
-  int N = 256;
-  int K = 128;
+  int M = 8;
+  int N = 20480;
+  int K = 5120;
 
   float alpha = 1.25f;
   float beta = -1.25f;
@@ -48,6 +51,16 @@ int main() {
   int ldb = B.device_ref().stride(0);
   int ldc = C.device_ref().stride(0);
   int ldd = C.device_ref().stride(0);
+
+  cudaEvent_t startEvent, endEvent;
+  cudaEventCreate(&startEvent);
+  cudaEventCreate(&endEvent);
+
+  int cnt = 30;
+  float total = 0;
+  for (int i = 0; i < cnt; i++) {
+    CUDA_CHECK(cudaEventRecord(startEvent, 0));
+
   //
   // Launch GEMM on the device
   //
@@ -60,7 +73,18 @@ int main() {
     {ptrD, ldd},            // TensorRef to D device tensor - may be the same as C
     {alpha, beta}           // epilogue operation arguments
   });
+   CUDA_CHECK(cudaEventRecord(endEvent, 0));
+    CUDA_CHECK(cudaEventSynchronize(endEvent));
 
+    float runtime_ms = 0;
+    cudaEventElapsedTime(&runtime_ms, startEvent, endEvent);
+
+    std::cout << "runtime_ms = " << runtime_ms << " ms\n";
+    if (i != 1) {
+      total += runtime_ms;
+    }
+  }
+  std::cout << "average runtime_ms = " << total / (cnt-1) << " ms\n";
   if (status != cutlass::Status::kSuccess) {
     return -1;
   }

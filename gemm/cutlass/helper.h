@@ -1,6 +1,7 @@
 #pragma once
 
 #include "cuda_runtime.h"
+#include <iostream>
 
 #define CUTLASS_CHECK(status)                                                                    \
   {                                                                                              \
