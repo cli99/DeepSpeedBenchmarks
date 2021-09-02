@@ -44,7 +44,7 @@
 
 // The code section below describes datatype for input, output matrices and
 // computation between elements in input matrices.
-using ElementAccumulator = float;  // <- data type of accumulator
+using ElementAccumulator = cutlass::half_t;  // <- data type of accumulator
 using ElementComputeEpilogue =
     ElementAccumulator;  // <- data type of epilogue operations
 using ElementInputA =
@@ -52,7 +52,7 @@ using ElementInputA =
                       // elements in input matrix A
 using ElementInputB =
     cutlass::half_t;          // <- data type of elements in input matrix B
-using ElementOutput = float;  // <- data type of elements in output matrix D
+using ElementOutput = cutlass::half_t;  // <- data type of elements in output matrix D
 
 // The code section below describes matrix layout of input and output matrices.
 // Column Major for Matrix A, B and C.
@@ -73,7 +73,7 @@ using LayoutOutput = cutlass::layout::ColumnMajor;
 using MMAOp = cutlass::arch::OpClassTensorOp;
 
 // This code section describes CUDA SM architecture number
-using SmArch = cutlass::arch::Sm75;
+using SmArch = cutlass::arch::Sm80;
 
 // This code section describes the tile size a thread block will compute
 using ShapeMMAThreadBlock =
@@ -81,11 +81,10 @@ using ShapeMMAThreadBlock =
                                              // 128, K = 32
 // This code section describes tile size a warp will compute
 using ShapeMMAWarp =
-    cutlass::gemm::GemmShape<64, 64,
-                             32>;  // <- warp tile M = 64, N = 64, K = 32
+    cutlass::gemm::GemmShape<32, 32, 32>;  // <- warp tile M = 64, N = 64, K = 32
 // This code section describes the size of MMA op
 using ShapeMMAOp =
-    cutlass::gemm::GemmShape<16, 8, 8>;  // <- MMA Op tile M = 8, N = 8, K = 4
+    cutlass::gemm::GemmShape<16, 8, 16>;  // <- MMA Op tile M = 8, N = 8, K = 4
 
 // This code section describes how threadblocks are scheduled on GPU
 using SwizzleThreadBlock =
@@ -110,13 +109,8 @@ using EpilogueOp = cutlass::epilogue::thread::LinearCombinationRelu<
     cutlass::epilogue::thread::ScaleType::NoBetaScaling>;  // <- alpha x C +
                                                            // bias
 
-// using EpilogueOp = cutlass::epilogue::thread::FastLinearCombinationClamp<
-//       ElementOutput,
-//       64 / cutlass::sizeof_bits<ElementOutput>::value
-//     >;
-
 // Number of pipelines you want to use
-constexpr int NumStages = 2;
+constexpr int NumStages = 6;
 
 using Gemm = cutlass::gemm::device::Gemm<
     ElementInputA, LayoutInputA, ElementInputB, LayoutInputB, ElementOutput,
@@ -172,6 +166,7 @@ int run() {
 
   // Initialize alpha for dot product computation
   ElementComputeEpilogue alpha = ElementComputeEpilogue(1);
+  ElementComputeEpilogue beta = ElementComputeEpilogue(1);
 
   // Split K dimension into 1 partitions
   int split_k_slices = 1;
@@ -248,7 +243,7 @@ int run() {
 
   // Launch device reference to compute strictly the product A * B
   gemm_device_reference(problem_size, alpha, tensor_a.device_ref(),
-                        tensor_b.device_ref(), 0, tensor_ref_d.device_ref());
+                        tensor_b.device_ref(), beta, tensor_ref_d.device_ref());
 
   // Wait for kernels to finish
   cudaDeviceSynchronize();

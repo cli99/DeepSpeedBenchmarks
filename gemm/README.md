@@ -9,7 +9,7 @@ cutlass supports https://github.com/NVIDIA/cutlass/blob/master/media/docs/functi
 A100
 | gemm_bias_relu   | CUTLASS tensorop | DS                           |     |     |
 | ---------------- | ---------------- | ---------------------------- | --- | --- |
-| fp16, fp16, fp16 | 0.292403         | 0.219034 (0.399258 if M = 8) |     |     |
+| fp16, fp16, fp16 | 0.279016         | 0.219034 (0.399258 if M = 8) |     |     |
 | fp16, int8, fp16 | X                | 0.110899                     |     |     |
 
 | gemm             | CUTLASS tensorop | DS       |     |     |

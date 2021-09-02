@@ -1,25 +1,25 @@
-#include <cutlass/numeric_types.h>
 #include <cutlass/gemm/device/gemm.h>
-
+#include <cutlass/numeric_types.h>
 #include <cutlass/util/host_tensor.h>
-#include "helper.h"
+
 #include <algorithm>
 #include <iostream>
 
-int main() {
+#include "helper.h"
 
+int main() {
   // Define the GEMM operation
   using Gemm = cutlass::gemm::device::Gemm<
-    cutlass::half_t,                           // ElementA
-    cutlass::layout::ColumnMajor,              // LayoutA
-    cutlass::half_t,                           // ElementB
-    cutlass::layout::ColumnMajor,              // LayoutB
-    cutlass::half_t,                           // ElementOutput
-    cutlass::layout::ColumnMajor,              // LayoutOutput
-    float,                                     // ElementAccumulator
-    cutlass::arch::OpClassTensorOp,            // tag indicating Tensor Cores
-    cutlass::arch::Sm75                        // tag indicating target GPU compute architecture
-  >;
+      cutlass::half_t,                 // ElementA
+      cutlass::layout::ColumnMajor,    // LayoutA
+      cutlass::half_t,                 // ElementB
+      cutlass::layout::ColumnMajor,    // LayoutB
+      cutlass::half_t,                 // ElementOutput
+      cutlass::layout::ColumnMajor,    // LayoutOutput
+      float,                           // ElementAccumulator
+      cutlass::arch::OpClassTensorOp,  // tag indicating Tensor Cores
+      cutlass::arch::Sm80  // tag indicating target GPU compute architecture
+      >;
 
   Gemm gemm_op;
   cutlass::Status status;
@@ -45,7 +45,7 @@ int main() {
   cutlass::half_t const *ptrA = A.device_data();
   cutlass::half_t const *ptrB = B.device_data();
   cutlass::half_t const *ptrC = C.device_data();
-  cutlass::half_t       *ptrD = C.device_data();
+  cutlass::half_t *ptrD = C.device_data();
 
   int lda = A.device_ref().stride(0);
   int ldb = B.device_ref().stride(0);
@@ -61,19 +61,19 @@ int main() {
   for (int i = 0; i < cnt; i++) {
     CUDA_CHECK(cudaEventRecord(startEvent, 0));
 
-  //
-  // Launch GEMM on the device
-  //
+    //
+    // Launch GEMM on the device
+    //
 
-  status = gemm_op({
-    {M, N, K},
-    {ptrA, lda},            // TensorRef to A device tensor
-    {ptrB, ldb},            // TensorRef to B device tensor
-    {ptrC, ldc},            // TensorRef to C device tensor
-    {ptrD, ldd},            // TensorRef to D device tensor - may be the same as C
-    {alpha, beta}           // epilogue operation arguments
-  });
-   CUDA_CHECK(cudaEventRecord(endEvent, 0));
+    status = gemm_op({
+        {M, N, K},
+        {ptrA, lda},   // TensorRef to A device tensor
+        {ptrB, ldb},   // TensorRef to B device tensor
+        {ptrC, ldc},   // TensorRef to C device tensor
+        {ptrD, ldd},   // TensorRef to D device tensor - may be the same as C
+        {alpha, beta}  // epilogue operation arguments
+    });
+    CUDA_CHECK(cudaEventRecord(endEvent, 0));
     CUDA_CHECK(cudaEventSynchronize(endEvent));
 
     float runtime_ms = 0;
@@ -84,7 +84,7 @@ int main() {
       total += runtime_ms;
     }
   }
-  std::cout << "average runtime_ms = " << total / (cnt-1) << " ms\n";
+  std::cout << "average runtime_ms = " << total / (cnt - 1) << " ms\n";
   if (status != cutlass::Status::kSuccess) {
     return -1;
   }
