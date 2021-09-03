@@ -678,7 +678,7 @@ int main() {
   cudaEventCreate(&startEvent);
   cudaEventCreate(&endEvent);
 
-  int cnt = 30;
+  int cnt = 100;
   float total = 0;
   for (int i = 0; i < cnt; i++) {
     CUDA_CHECK(cudaEventRecord(startEvent, 0));
@@ -687,8 +687,8 @@ int main() {
 
     launch_input_tiled_gemm_kernel_v2(
         (T*)output.data_ptr(), (T*)input.data_ptr(), (T*)weight.data_ptr(),
-        (T*)nullptr, (T*)block_sums.data_ptr(), input.size(2), bsz,
-        weight.size(1), false, Context::Instance().GetCurrentStream());
+        (T*)bias.data_ptr(), (T*)block_sums.data_ptr(), input.size(2), bsz,
+        weight.size(1), true, Context::Instance().GetCurrentStream());
     CUDA_CHECK_ERROR();
     CUDA_CHECK(cudaEventRecord(endEvent, 0));
     CUDA_CHECK(cudaEventSynchronize(endEvent));
@@ -696,7 +696,7 @@ int main() {
     float runtime_ms = 0;
     cudaEventElapsedTime(&runtime_ms, startEvent, endEvent);
     // state.SetIterationTime(runtime_ms / 10.0e3);
-    std::cout << "runtime_ms = " << runtime_ms << " ms\n";
+    // std::cout << "runtime_ms = " << runtime_ms << " ms\n";
     if (i != 1) {
       total += runtime_ms;
     }

@@ -171,11 +171,11 @@ using SmArch = cutlass::arch::Sm70;
 
 // This code section describes the tile size a thread block will compute
 using ShapeMMAThreadBlock =
-    cutlass::gemm::GemmShape<128, 128, 32>;  // <- threadblock tile M = 128, N =
+    cutlass::gemm::GemmShape<128, 64, 32>;  // <- threadblock tile M = 128, N =
                                              // 128, K = 32
 // This code section describes tile size a warp will compute
 using ShapeMMAWarp =
-    cutlass::gemm::GemmShape<64, 64,
+    cutlass::gemm::GemmShape<64, 32,
                              32>;  // <- warp tile M = 64, N = 64, K = 32
 // This code section describes the size of MMA op
 using ShapeMMAOp =
@@ -197,7 +197,22 @@ using EpilogueOp = cutlass::epilogue::thread::LinearCombination<
     ElementAccumulator,       // <- data type of accumulator
     ElementComputeEpilogue>;  // <- data type for alpha/beta in linear
                               // combination function
-// cutlass::epilogue::thread::ScaleType::NoBetaScaling
+
+
+// using EpilogueOp = cutlass::epilogue::thread::LinearCombinationRelu<
+//     ElementOutput,  // <- data type of output matrix
+//     128 / cutlass::sizeof_bits<
+//               ElementOutput>::value,  // <- this is the number of elements per
+//                                       // vectorized memory access. For half
+//                                       // precision, it's 8 elements. This
+//                                       // becomes the vector width of math
+//                                       // instructions in epilogue too
+//     ElementAccumulator,      // <- data type of accumulator
+//     ElementComputeEpilogue,  // <- data type for alpha in linear combination
+//                              // function
+//     cutlass::epilogue::thread::ScaleType::NoBetaScaling>;  // <- alpha x C +
+//                                                            // bias
+
 
 // Number of pipelines you want to use
 constexpr int NumStages = 2;
@@ -227,8 +242,8 @@ int run() {
     return 0;
   }
 
-  const int length_m = 8;
-  const int length_n = 20480;
+  const int length_n = 8;
+  const int length_m = 20480;
   const int length_k = 5120;
 
   // Create a tuple of problem size for matrix multiplication
@@ -311,7 +326,7 @@ int run() {
   cudaEventCreate(&startEvent);
   cudaEventCreate(&endEvent);
 
-  int cnt = 10;
+  int cnt = 100;
   float total = 0;
   for (int i = 0; i < cnt; i++) {
     // Launch initialized CUTLASS kernel
@@ -329,7 +344,7 @@ int run() {
     float runtime_ms = 0;
     cudaEventElapsedTime(&runtime_ms, startEvent, endEvent);
 
-    std::cout << "runtime_ms = " << runtime_ms << " ms\n";
+    // std::cout << "runtime_ms = " << runtime_ms << " ms\n";
     if (i != 1) {
       total += runtime_ms;
     }

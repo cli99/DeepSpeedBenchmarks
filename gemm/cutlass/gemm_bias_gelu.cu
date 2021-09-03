@@ -239,7 +239,7 @@ int run() {
     float runtime_ms = 0;
     cudaEventElapsedTime(&runtime_ms, startEvent, endEvent);
 
-    std::cout << "runtime_ms = " << runtime_ms << " ms\n";
+    // std::cout << "runtime_ms = " << runtime_ms << " ms\n";
     if (i != 1) {
       total += runtime_ms;
     }
