@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 2.8)
+cmake_minimum_required(VERSION 3.0)
 project(DeepSpeedBenchmarks CXX CUDA)
 
 Set(CMAKE_CXX_STANDARD 17)
@@ -31,11 +31,13 @@ conan_cmake_install(PATH_OR_REFERENCE .
                     REMOTE conan-center
                     SETTINGS ${settings})
 
+find_package(CUDA)
 find_package(benchmark REQUIRED)
 
-add_executable(gemm_bias_gelu gemm_bias_gelu.cu)
+cuda_select_nvcc_arch_flags(CUDA_ARCH_OPTS Auto)
+list(APPEND NVCC_FLAGS  "${CUDA_ARCH_OPTS}" )
 
-list(APPEND NVCC_FLAGS -arch=sm_80)
+add_executable(gemm_bias_gelu gemm_bias_gelu.cu)
 target_include_directories(gemm_bias_gelu PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/cutlass/include
@@ -48,8 +50,6 @@ target_compile_options(
 )
 
 add_executable(volta_tensorop_gemm volta_tensorop_gemm.cu)
-
-list(APPEND NVCC_FLAGS -arch=sm_70)
 target_include_directories(volta_tensorop_gemm PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/cutlass/include
@@ -62,8 +62,6 @@ target_compile_options(
 )
 
 add_executable(gemm gemm.cu)
-
-list(APPEND NVCC_FLAGS -arch=sm_70)
 target_include_directories(gemm PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/cutlass/include
@@ -71,6 +69,18 @@ target_include_directories(gemm PRIVATE
 target_link_libraries(gemm PRIVATE benchmark::benchmark)
 target_compile_options(
     gemm
+    PRIVATE
+    $<$<COMPILE_LANGUAGE:CUDA>:${NVCC_FLAGS}>
+)
+
+add_executable(splitk_gemm splitk_gemm.cu)
+target_include_directories(splitk_gemm PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/cutlass/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/cutlass/tools/util/include)
+target_link_libraries(splitk_gemm PRIVATE benchmark::benchmark)
+target_compile_options(
+    splitk_gemm
     PRIVATE
     $<$<COMPILE_LANGUAGE:CUDA>:${NVCC_FLAGS}>
 )
