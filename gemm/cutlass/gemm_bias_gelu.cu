@@ -77,14 +77,14 @@ using SmArch = cutlass::arch::Sm80;
 
 // This code section describes the tile size a thread block will compute
 using ShapeMMAThreadBlock =
-    cutlass::gemm::GemmShape<128, 128, 32>;  // <- threadblock tile M = 128, N =
+    cutlass::gemm::GemmShape<64, 64, 16>;  // <- threadblock tile M = 128, N =
                                              // 128, K = 32
 // This code section describes tile size a warp will compute
 using ShapeMMAWarp =
-    cutlass::gemm::GemmShape<32, 32, 32>;  // <- warp tile M = 64, N = 64, K = 32
+    cutlass::gemm::GemmShape<32, 32, 16>;  // <- warp tile M = 64, N = 64, K = 32
 // This code section describes the size of MMA op
 using ShapeMMAOp =
-    cutlass::gemm::GemmShape<16, 8, 16>;  // <- MMA Op tile M = 8, N = 8, K = 4
+    cutlass::gemm::GemmShape<16, 8, 8>;  // <- MMA Op tile M = 8, N = 8, K = 4
 
 // This code section describes how threadblocks are scheduled on GPU
 using SwizzleThreadBlock =
@@ -95,7 +95,21 @@ using SwizzleThreadBlock =
 //
 //    d_ij = max(0, alpha * sum_k(a_ik * b_kj) + c_ij )
 //
-using EpilogueOp = cutlass::epilogue::thread::LinearCombinationRelu<
+// using EpilogueOp = cutlass::epilogue::thread::LinearCombinationRelu<
+//     ElementOutput,  // <- data type of output matrix
+//     128 / cutlass::sizeof_bits<
+//               ElementOutput>::value,  // <- this is the number of elements per
+//                                       // vectorized memory access. For half
+//                                       // precision, it's 8 elements. This
+//                                       // becomes the vector width of math
+//                                       // instructions in epilogue too
+//     ElementAccumulator,      // <- data type of accumulator
+//     ElementComputeEpilogue,  // <- data type for alpha in linear combination
+//                              // function
+//     cutlass::epilogue::thread::ScaleType::NoBetaScaling>;  // <- alpha x C +
+//                                                            // bias
+
+using EpilogueOp = cutlass::epilogue::thread::LinearCombination<
     ElementOutput,  // <- data type of output matrix
     128 / cutlass::sizeof_bits<
               ElementOutput>::value,  // <- this is the number of elements per
@@ -104,10 +118,9 @@ using EpilogueOp = cutlass::epilogue::thread::LinearCombinationRelu<
                                       // becomes the vector width of math
                                       // instructions in epilogue too
     ElementAccumulator,      // <- data type of accumulator
-    ElementComputeEpilogue,  // <- data type for alpha in linear combination
+    ElementComputeEpilogue>;  // <- data type for alpha in linear combination
                              // function
-    cutlass::epilogue::thread::ScaleType::NoBetaScaling>;  // <- alpha x C +
-                                                           // bias
+
 
 // Number of pipelines you want to use
 constexpr int NumStages = 6;
@@ -118,8 +131,8 @@ using Gemm = cutlass::gemm::device::Gemm<
     ShapeMMAWarp, ShapeMMAOp, EpilogueOp, SwizzleThreadBlock, NumStages>;
 
 int run() {
-  const int length_m = 8;
-  const int length_n = 20480;
+  const int length_m = 20480;
+  const int length_n = 8;
   const int length_k = 5120;
 
   // Create a tuple of problem size for matrix multiplication
@@ -209,7 +222,7 @@ int run() {
   cudaEventCreate(&startEvent);
   cudaEventCreate(&endEvent);
 
-  int cnt = 30;
+  int cnt = 100;
   float total = 0;
   for (int i = 0; i < cnt; i++) {
     // Launch initialized CUTLASS kernel
@@ -232,6 +245,7 @@ int run() {
     }
   }
   std::cout << "average runtime_ms = " << total / (cnt-1) << " ms\n";
+
   //
   // Create instantiation for device reference gemm kernel
   //

@@ -532,8 +532,8 @@ void allocat_workspace(unsigned hidden_dim, unsigned max_seq_len,
   Context::Instance().GenWorkSpace(_workSpaceSize, sizeof(T));
 }
 
-int main() {
-  // void run_int8(benchmark::State& state) {
+// int main() {
+void run_int8(benchmark::State& state) {
   // https://github.com/microsoft/DeepSpeed-internal/blob/inference-specialized-only/deepspeed/ops/transformer/inference/transformer_inference.py#L289
 
   auto hidden_size = 5120;
@@ -625,11 +625,11 @@ int main() {
   std::cout << "average runtime_ms = " << total / (cnt - 1) << " ms\n";
 }
 
-// int main() {
-void run_fp16(benchmark::State& state) {
+int main() {
+// void run_fp16(benchmark::State& state) {
   auto hidden_size = 5120;
   torch::Tensor input =
-      torch::rand({1, 1, hidden_size}, torch::TensorOptions()
+      torch::rand({1, 8, hidden_size}, torch::TensorOptions()
                                            .dtype(torch::kFloat16)
                                            .layout(torch::kStrided)
                                            .device(torch::kCUDA));
