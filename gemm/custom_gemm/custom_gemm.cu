@@ -1128,7 +1128,6 @@ void allocat_workspace(unsigned hidden_dim, unsigned max_seq_len,
   Context::Instance().GenWorkSpace(_workSpaceSize, sizeof(T));
 }
 
-// int main() {
 int main(benchmark::State& state) {
   // https://github.com/microsoft/DeepSpeed-internal/blob/inference-specialized-only/deepspeed/ops/transformer/inference/transformer_inference.py#L289
 
@@ -1140,10 +1139,10 @@ int main(benchmark::State& state) {
                                            .device(torch::kCUDA));
   torch::Tensor weight =
       torch::ones({hidden_size, 4 * hidden_size}, torch::TensorOptions()
-                                                      .dtype(torch::kFloat16)
+                                                      .dtype(torch::kInt8)
                                                       .layout(torch::kStrided)
                                                       .device(torch::kCUDA)
-                                                      .requires_grad(true));
+                                                      .requires_grad(false));
 
   torch::Tensor q_scale = torch::ones({1}, torch::TensorOptions()
                                                .dtype(torch::kFloat32)
@@ -1178,7 +1177,7 @@ int main(benchmark::State& state) {
   int br2 = (int)log2(out_blocks);
   out_blocks = (int)pow(2.0, (float)br2);
 
-  auto block_sums = torch::empty(
+  auto block_sums = torch::zeros(
       {input_cont.size(0) * out_blocks, input_cont.size(1), weight.size(1)},
       options);
 
@@ -1213,11 +1212,13 @@ int main(benchmark::State& state) {
     CUDA_CHECK(cudaEventRecord(endEvent, 0));
     CUDA_CHECK(cudaEventSynchronize(endEvent));
 
+    output = output.to(torch::kFloat32);
     std::cout << "at 0,0,0 = " << output.index({0, 0, 0}) << "\n";
     std::cout << "at 0,0,1 = " << output.index({0, 0, 1}) << "\n";
     std::cout << "at 0,0,2 = " << output.index({0, 0, 2}) << "\n";
     std::cout << "at 1,0,0 = " << output.index({1, 0, 0}) << "\n";
     std::cout << "at 1,0,1 = " << output.index({1, 0, 1}) << "\n";
+    std::cout << "at 1,0,2 = " << output.index({1, 0, 2}) << "\n";
 
     float runtime_ms = 0;
     cudaEventElapsedTime(&runtime_ms, startEvent, endEvent);
