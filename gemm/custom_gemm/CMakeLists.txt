@@ -33,7 +33,7 @@ conan_cmake_install(PATH_OR_REFERENCE .
 
 find_package(benchmark REQUIRED)
 find_package(Python REQUIRED COMPONENTS Development)
-find_package(Torch REQUIRED HINTS /opt/conda/lib/python3.6/site-packages)
+find_package(Torch REQUIRED HINTS /opt/conda/lib/python3.8/site-packages)
 
 add_executable(custom_gemm custom_gemm.cu)
 target_link_libraries(custom_gemm PRIVATE ${TORCH_LIBRARIES} ${Python_LIBRARIES} benchmark::benchmark)

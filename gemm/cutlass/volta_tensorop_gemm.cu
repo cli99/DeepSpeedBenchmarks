@@ -136,7 +136,7 @@ GEMM kernel.
 #include <iostream>
 
 #include "cutlass/cutlass.h"
-#include "cutlass/gemm/device/gemm.h"
+#include "cutlass/gemm/device/gemv.h"
 #include "cutlass/util/host_tensor.h"
 #include "cutlass/util/reference/device/gemm.h"
 #include "cutlass/util/reference/host/tensor_compare.h"
@@ -217,8 +217,8 @@ using EpilogueOp = cutlass::epilogue::thread::LinearCombination<
 // Number of pipelines you want to use
 constexpr int NumStages = 2;
 
-using Gemm = cutlass::gemm::device::Gemm<
-    ElementInputA, LayoutInputA, ElementInputB, LayoutInputB, ElementOutput,
+using Gemm = cutlass::gemm::device::Gemv<
+    ElementInputA, LayoutInputA, ElementInputB, ElementOutput,
     LayoutOutput, ElementAccumulator, MMAOp, SmArch, ShapeMMAThreadBlock,
     ShapeMMAWarp, ShapeMMAOp, EpilogueOp, SwizzleThreadBlock, NumStages>;
 
@@ -242,7 +242,7 @@ int run() {
     return 0;
   }
 
-  const int length_n = 8;
+  const int length_n = 1;
   const int length_m = 20480;
   const int length_k = 5120;
 
