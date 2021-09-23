@@ -1,6 +1,7 @@
 #include <limits>
 // #include "custom_cuda_layers.h"
 
+#include <ATen/cuda/CUDABlas.h>
 #include <benchmark/benchmark.h>
 #include <cooperative_groups.h>
 #include <cuda_profiler_api.h>
@@ -1143,6 +1144,9 @@ int main(benchmark::State& state) {
                                                       .layout(torch::kStrided)
                                                       .device(torch::kCUDA)
                                                       .requires_grad(false));
+  // cublas gemm output
+  auto output_cublas =
+      at::matmul(input, weight.to(torch::kFloat16)).to(torch::kFloat32);
 
   torch::Tensor q_scale = torch::ones({1}, torch::TensorOptions()
                                                .dtype(torch::kFloat32)
@@ -1229,11 +1233,11 @@ int main(benchmark::State& state) {
     }
   }
   std::cout << "average runtime_ms = " << total / (cnt - 1) << " ms\n";
+
   return 0;
 }
 
-// int cheng() {
-//   // void run_fp16(benchmark::State& state) {
+// void run_fp16(benchmark::State& state) {
 //   auto hidden_size = 5120;
 //   torch::Tensor input =
 //       torch::rand({1, 1, hidden_size}, torch::TensorOptions()
